@@ -1,5 +1,8 @@
 package com.mmcromero.promptflutuante
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Service
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
@@ -21,12 +24,15 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.*
 import androidx.appcompat.widget.SwitchCompat
+import androidx.core.app.NotificationCompat
 import kotlin.math.abs
 
 class FloatingService : Service() {
 
     companion object {
         var isMasterEnabled = true
+        private const val CHANNEL_ID = "PromptFlutuanteChannel"
+        private const val NOTIFICATION_ID = 1001
     }
 
     private lateinit var windowManager: WindowManager
@@ -34,6 +40,8 @@ class FloatingService : Service() {
     private lateinit var menuView: View
     private lateinit var bubbleParams: WindowManager.LayoutParams
     private lateinit var menuParams: WindowManager.LayoutParams
+
+    private var currentForegroundPackage: String = ""
 
     private val handler = Handler(Looper.getMainLooper())
     private val checkAppRunnable = object : Runnable {
@@ -47,7 +55,10 @@ class FloatingService : Service() {
         "com.openai.chatgpt",
         "com.google.android.apps.bard",
         "com.google.android.googlequicksearchbox",
+        "com.google.android.apps.search",
         "com.anthropic.claude.chat",
+        "com.anthropic.claude",
+        "com.anthropic.claudebot",
         "com.perplexity.perplexity",
         "com.microsoft.copilot"
     )
@@ -90,10 +101,32 @@ class FloatingService : Service() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
+        startForegroundServiceNotification()
         setupBubbleView()
         setupMenuView()
 
         handler.post(checkAppRunnable)
+    }
+
+    private fun startForegroundServiceNotification() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Serviço Prompt Flutuante",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.createNotificationChannel(channel)
+        }
+
+        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Prompt Flutuante")
+            .setContentText("Monitorando aplicativos de IA em segundo plano")
+            .setSmallIcon(android.R.drawable.btn_star)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        startForeground(NOTIFICATION_ID, notification)
     }
 
     private fun checkForegroundApp() {
@@ -103,8 +136,8 @@ class FloatingService : Service() {
             return
         }
 
-        val currentPackage = getForegroundPackage()
-        if (aiAppPackages.contains(currentPackage)) {
+        val detectedPackage = getForegroundPackage()
+        if (aiAppPackages.contains(detectedPackage)) {
             if (::bubbleView.isInitialized) bubbleView.visibility = View.VISIBLE
         } else {
             if (::bubbleView.isInitialized) bubbleView.visibility = View.GONE
@@ -115,17 +148,16 @@ class FloatingService : Service() {
     private fun getForegroundPackage(): String {
         val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val time = System.currentTimeMillis()
-        val events = usm.queryEvents(time - 1000 * 5, time)
+        val events = usm.queryEvents(time - 1000 * 10, time)
         val event = UsageEvents.Event()
-        var lastForegroundApp = ""
 
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
-            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED || event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
-                lastForegroundApp = event.packageName
+            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
+                currentForegroundPackage = event.packageName
             }
         }
-        return lastForegroundApp
+        return currentForegroundPackage
     }
 
     private fun getOverlayType(): Int {
