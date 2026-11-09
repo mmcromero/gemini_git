@@ -42,6 +42,11 @@ class FloatingService : Service() {
 
     private val promptList = mutableListOf(
         PromptItem(
+            title = "Pair Programming",
+            onPrompt = "SOBREPOR TUDO - Modo Pair Programming ATIVADO: Atue como meu copiloto e arquiteto de software. Diante de qualquer ideia, recurso ou problema, execute 100% da geração de código e solução técnica até o seu limite como IA, orientando-me com passos diretos apenas naquilo que exigir ação manual minha. Forneça instruções ultra precisas, links diretos em blocos de texto limpo individuais por URL, âncoras exatas de código para substituição e priorize facilidade de cópia e execução.",
+            offPrompt = "CANCELAR Modo Pair Programming: Encerre o modo estrito de pair programming e retorne ao comportamento padrão."
+        ),
+        PromptItem(
             title = "Modo Celular",
             onPrompt = "SOBREPOR TUDO - Modo Celular ATIVADO: Responda de forma extremamente curta, usando tópicos rápidos e frases diretas.",
             offPrompt = "CANCELAR Modo Celular: Encerre o modo de respostas curtas e retorne ao comportamento padrão."
@@ -199,7 +204,7 @@ class FloatingService : Service() {
         val scrollView = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                500
+                550
             )
         }
 
