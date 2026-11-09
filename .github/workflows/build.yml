@@ -31,10 +31,10 @@ jobs:
         echo "sdk.dir=$ANDROID_HOME" > local.properties
         yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-    - name: Build Debug APK
+    - name: Build Release APK
       id: gradle_build
       continue-on-error: true
-      run: gradle assembleDebug --stacktrace
+      run: gradle assembleRelease --stacktrace
 
     - name: Analyze Error with Gemini API (if build fails)
       if: steps.gradle_build.outcome == 'failure'
@@ -42,7 +42,7 @@ jobs:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       run: |
         echo "O build falhou. Enviando erro para o Gemini..."
-        ERROR_LOG=$(gradle assembleDebug --stacktrace 2>&1 | tail -n 100 || echo "Erro durante a compilação do Gradle.")
+        ERROR_LOG=$(gradle assembleRelease --stacktrace 2>&1 | tail -n 100 || echo "Erro durante a compilação do Gradle.")
         
         curl -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}" \
         -H 'Content-Type: application/json' \
@@ -58,5 +58,5 @@ jobs:
       if: steps.gradle_build.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
-        name: app-debug.apk
-        path: app/build/outputs/apk/debug/app-debug.apk
+        name: app-release-unsigned.apk
+        path: app/build/outputs/apk/release/app-release-unsigned.apk
