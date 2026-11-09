@@ -25,13 +25,33 @@ class FloatingService : Service() {
     private lateinit var bubbleParams: WindowManager.LayoutParams
     private lateinit var menuParams: WindowManager.LayoutParams
 
-    // Estrutura de dados dos prompts
-    data class PromptItem(val title: String, val text: String, var isEnabled: Boolean = true)
+    // Regra Geral Universal (Prompt Mestre)
+    private val generalRules = "Regras Gerais Permanentes: Mantenha as respostas em português, objetivas e estruturadas."
+
+    // Estrutura de dados com par de prompts (Ativação vs Reset)
+    data class PromptItem(
+        val title: String,
+        val onPrompt: String,
+        val offPrompt: String,
+        var isEnabled: Boolean = true
+    )
 
     private val promptList = mutableListOf(
-        PromptItem("Modo Celular", "Modo Celular: Responda de forma objetiva, usando frases curtas e apresentando sugestões de próximos passos."),
-        PromptItem("Análise de Código", "Analise o seguinte trecho de código, identifique possíveis falhas e sugira a melhoria mantendo o estilo original:"),
-        PromptItem("Revisar & Corrigir", "Por favor, revise e corrija a gramática e a clareza do texto a seguir mantendo o tom natural:")
+        PromptItem(
+            title = "Modo Celular",
+            onPrompt = "SOBREPOR TUDO - Modo Celular ATIVADO: Responda de forma extremamente curta, usando tópicos rápidos e frases diretas.",
+            offPrompt = "CANCELAR Modo Celular: Encerre o modo de respostas curtas e retorne ao comportamento padrão."
+        ),
+        PromptItem(
+            title = "Análise de Código",
+            onPrompt = "SOBREPOR TUDO - Modo Code Review ATIVADO: Foque exclusivamente na identificação de bugs, performance e boas práticas do código a seguir.",
+            offPrompt = "CANCELAR Modo Code Review: Desative a análise estrita de código e volte ao tom de conversa normal."
+        ),
+        PromptItem(
+            title = "Revisar Texto",
+            onPrompt = "SOBREPOR TUDO - Modo Revisor ATIVADO: Reescreva o texto a seguir corrigindo gramática e pontuação, mantendo o tom natural.",
+            offPrompt = "CANCELAR Modo Revisor: Encerre a revisão de texto e retorne ao comportamento padrão."
+        )
     )
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -54,7 +74,6 @@ class FloatingService : Service() {
     }
 
     private fun setupBubbleView() {
-        // Criando a bolinha flutuante circular
         val button = Button(this).apply {
             text = "⚡"
             textSize = 18f
@@ -76,7 +95,6 @@ class FloatingService : Service() {
             y = 300
         }
 
-        // Lógica para diferenciar Arraste de Clique
         button.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
             private var initialY = 0
@@ -101,7 +119,6 @@ class FloatingService : Service() {
                     MotionEvent.ACTION_UP -> {
                         val diffX = abs(event.rawX - initialTouchX)
                         val diffY = abs(event.rawY - initialTouchY)
-                        // Se moveu menos de 10 pixels, é um CLIQUE
                         if (diffX < 10 && diffY < 10) {
                             toggleMenuVisibility()
                         }
@@ -117,7 +134,6 @@ class FloatingService : Service() {
     }
 
     private fun setupMenuView() {
-        // Layout principal do menu expandido
         val mainLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(30, 30, 30, 30)
@@ -129,7 +145,6 @@ class FloatingService : Service() {
             }
         }
 
-        // Cabeçalho (Título + Fechar)
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -154,11 +169,10 @@ class FloatingService : Service() {
         header.addView(closeBtn)
         mainLayout.addView(header)
 
-        // Lista rolável de prompts
         val scrollView = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                450
+                500
             )
         }
 
@@ -180,24 +194,38 @@ class FloatingService : Service() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
 
+            val copyBtn = Button(this).apply {
+                textSize = 11f
+            }
+
+            fun updateButtonState() {
+                if (prompt.isEnabled) {
+                    copyBtn.text = "Ativar"
+                    copyBtn.setBackgroundColor(Color.parseColor("#2E7D32"))
+                } else {
+                    copyBtn.text = "Resetar"
+                    copyBtn.setBackgroundColor(Color.parseColor("#C62828"))
+                }
+            }
+
             val switchBtn = Switch(this).apply {
                 isChecked = prompt.isEnabled
                 setOnCheckedChangeListener { _, isChecked ->
                     prompt.isEnabled = isChecked
+                    updateButtonState()
                 }
             }
 
-            val copyBtn = Button(this).apply {
-                text = "Copiar"
-                textSize = 12f
-                setOnClickListener {
-                    if (prompt.isEnabled) {
-                        copyToClipboard(prompt.text)
-                        toggleMenuVisibility()
-                    } else {
-                        Toast.makeText(context, "Prompt desativado!", Toast.LENGTH_SHORT).show()
-                    }
+            updateButtonState()
+
+            copyBtn.setOnClickListener {
+                val finalPrompt = if (prompt.isEnabled) {
+                    prompt.onPrompt
+                } else {
+                    "${prompt.offPrompt}\n\n$generalRules"
                 }
+                copyToClipboard(finalPrompt, if (prompt.isEnabled) "Modo ativado copiado!" else "Instrução de reset copiada!")
+                toggleMenuVisibility()
             }
 
             row.addView(promptTitle)
@@ -212,7 +240,7 @@ class FloatingService : Service() {
         menuView = mainLayout
 
         menuParams = WindowManager.LayoutParams(
-            650, WindowManager.LayoutParams.WRAP_CONTENT,
+            680, WindowManager.LayoutParams.WRAP_CONTENT,
             getOverlayType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
@@ -233,11 +261,11 @@ class FloatingService : Service() {
         }
     }
 
-    private fun copyToClipboard(text: String) {
+    private fun copyToClipboard(text: String, toastMessage: String) {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText("Prompt", text)
         clipboard.setPrimaryClip(clip)
-        Toast.makeText(this, "Prompt copiado com sucesso!", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, toastMessage, Toast.LENGTH_SHORT).show()
     }
 
     override fun onDestroy() {
