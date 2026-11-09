@@ -28,12 +28,12 @@ class FloatingService : Service() {
     // Regra Geral Universal (Prompt Mestre)
     private val generalRules = "Regras Gerais Permanentes: Mantenha as respostas em português, objetivas e estruturadas."
 
-    // Estrutura de dados com par de prompts (Ativação vs Reset)
+    // Estrutura de dados dos prompts (todos iniciam desativados)
     data class PromptItem(
         val title: String,
         val onPrompt: String,
         val offPrompt: String,
-        var isEnabled: Boolean = true
+        var isEnabled: Boolean = false
     )
 
     private val promptList = mutableListOf(
@@ -194,43 +194,31 @@ class FloatingService : Service() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
 
-            val copyBtn = Button(this).apply {
-                textSize = 11f
-            }
-
-            fun updateButtonState() {
-                if (prompt.isEnabled) {
-                    copyBtn.text = "Ativar"
-                    copyBtn.setBackgroundColor(Color.parseColor("#2E7D32"))
-                } else {
-                    copyBtn.text = "Resetar"
-                    copyBtn.setBackgroundColor(Color.parseColor("#C62828"))
-                }
-            }
-
             val switchBtn = Switch(this).apply {
                 isChecked = prompt.isEnabled
-                setOnCheckedChangeListener { _, isChecked ->
-                    prompt.isEnabled = isChecked
-                    updateButtonState()
-                }
-            }
+                setOnClickListener {
+                    val newState = isChecked
+                    prompt.isEnabled = newState
 
-            updateButtonState()
+                    val textToCopy = if (newState) {
+                        prompt.onPrompt
+                    } else {
+                        "${prompt.offPrompt}\n\n$generalRules"
+                    }
 
-            copyBtn.setOnClickListener {
-                val finalPrompt = if (prompt.isEnabled) {
-                    prompt.onPrompt
-                } else {
-                    "${prompt.offPrompt}\n\n$generalRules"
+                    val toastMsg = if (newState) {
+                        "${prompt.title} ATIVADO (Copiado!)"
+                    } else {
+                        "${prompt.title} DESATIVADO (Reset Copiado!)"
+                    }
+
+                    copyToClipboard(textToCopy, toastMsg)
+                    toggleMenuVisibility()
                 }
-                copyToClipboard(finalPrompt, if (prompt.isEnabled) "Modo ativado copiado!" else "Instrução de reset copiada!")
-                toggleMenuVisibility()
             }
 
             row.addView(promptTitle)
             row.addView(switchBtn)
-            row.addView(copyBtn)
             listContainer.addView(row)
         }
 
@@ -253,6 +241,7 @@ class FloatingService : Service() {
 
     private fun toggleMenuVisibility() {
         if (menuView.parent == null) {
+            setupMenuView()
             menuParams.x = bubbleParams.x
             menuParams.y = bubbleParams.y + 150
             windowManager.addView(menuView, menuParams)
