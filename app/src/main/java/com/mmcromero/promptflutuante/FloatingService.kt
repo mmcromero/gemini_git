@@ -12,6 +12,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
 import android.util.DisplayMetrics
+import android.view.ContextThemeWrapper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -24,11 +25,12 @@ class FloatingService : Service() {
 
     private lateinit var windowManager: WindowManager
     private lateinit var bubbleView: View
-    private lateinit var menuView: View
+    private var menuView: View? = null
     private lateinit var bubbleParams: WindowManager.LayoutParams
     private lateinit var menuParams: WindowManager.LayoutParams
 
     private var screenWidth: Int = 0
+    private var screenHeight: Int = 0
 
     private val generalRules = "Regras Gerais Permanentes: Mantenha as respostas em português, objetivas e estruturadas."
 
@@ -72,9 +74,9 @@ class FloatingService : Service() {
         @Suppress("DEPRECATION")
         windowManager.defaultDisplay.getMetrics(displayMetrics)
         screenWidth = displayMetrics.widthPixels
+        screenHeight = displayMetrics.heightPixels
 
         setupBubbleView()
-        setupMenuView()
     }
 
     private fun getOverlayType(): Int {
@@ -146,7 +148,7 @@ class FloatingService : Service() {
                             windowManager.updateViewLayout(bubbleView, bubbleParams)
                         }
 
-                        if (menuView.parent == null) {
+                        if (menuView == null || menuView?.parent == null) {
                             button.alpha = 0.45f
                         }
                         return true
@@ -160,10 +162,12 @@ class FloatingService : Service() {
         windowManager.addView(bubbleView, bubbleParams)
     }
 
-    private fun setupMenuView() {
-        val mainLayout = LinearLayout(this).apply {
+    private fun buildMenuView(): View {
+        val themedContext = ContextThemeWrapper(this, androidx.appcompat.R.style.Theme_AppCompat_Light_NoActionBar)
+        
+        val mainLayout = LinearLayout(themedContext).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(30, 30, 30, 30)
+            setPadding(35, 35, 35, 35)
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = 24f
@@ -172,20 +176,20 @@ class FloatingService : Service() {
             }
         }
 
-        val header = LinearLayout(this).apply {
+        val header = LinearLayout(themedContext).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        val title = TextView(this).apply {
+        val title = TextView(themedContext).apply {
             text = "⚡ Prompts IA"
             textSize = 16f
             setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
-        val btnTurnOff = Button(this).apply {
-            text = "Desativar App"
+        val btnTurnOff = Button(themedContext).apply {
+            text = "Desativar"
             textSize = 11f
             setTextColor(Color.parseColor("#FF5252"))
             background = null
@@ -194,7 +198,7 @@ class FloatingService : Service() {
             }
         }
 
-        val closeBtn = Button(this).apply {
+        val closeBtn = Button(themedContext).apply {
             text = "✕"
             setTextColor(Color.GRAY)
             textSize = 14f
@@ -207,14 +211,14 @@ class FloatingService : Service() {
         header.addView(closeBtn)
         mainLayout.addView(header)
 
-        val scrollView = ScrollView(this).apply {
+        val scrollView = ScrollView(themedContext).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 550
             )
         }
 
-        val listContainer = LinearLayout(this).apply {
+        val listContainer = LinearLayout(themedContext).apply {
             orientation = LinearLayout.VERTICAL
         }
 
@@ -228,20 +232,20 @@ class FloatingService : Service() {
         )
 
         promptList.forEach { prompt ->
-            val row = LinearLayout(this).apply {
+            val row = LinearLayout(themedContext).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, 16, 0, 16)
             }
 
-            val promptTitle = TextView(this).apply {
+            val promptTitle = TextView(themedContext).apply {
                 text = prompt.title
                 setTextColor(Color.WHITE)
                 textSize = 14f
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
 
-            val switchBtn = SwitchCompat(this).apply {
+            val switchBtn = SwitchCompat(themedContext).apply {
                 isChecked = prompt.isEnabled
                 thumbTintList = thumbColors
                 trackTintList = trackColors
@@ -273,30 +277,29 @@ class FloatingService : Service() {
 
         scrollView.addView(listContainer)
         mainLayout.addView(scrollView)
-
-        menuView = mainLayout
-
-        menuParams = WindowManager.LayoutParams(
-            680, WindowManager.LayoutParams.WRAP_CONTENT,
-            getOverlayType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = 100
-            y = 300
-        }
+        return mainLayout
     }
 
     private fun toggleMenuVisibility() {
-        if (menuView.parent == null) {
-            setupMenuView()
+        if (menuView == null || menuView?.parent == null) {
+            menuView = buildMenuView()
             bubbleView.alpha = 1.0f
-            menuParams.x = if (bubbleParams.x > screenWidth / 2) bubbleParams.x - 550 else bubbleParams.x + 50
-            menuParams.y = bubbleParams.y + 100
+
+            val menuWidth = (screenWidth * 0.85).toInt().coerceAtMost(720)
+            
+            menuParams = WindowManager.LayoutParams(
+                menuWidth, WindowManager.LayoutParams.WRAP_CONTENT,
+                getOverlayType(),
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.CENTER
+            }
+
             windowManager.addView(menuView, menuParams)
         } else {
             windowManager.removeView(menuView)
+            menuView = null
             bubbleView.alpha = 0.45f
         }
     }
@@ -313,8 +316,9 @@ class FloatingService : Service() {
         if (::bubbleView.isInitialized && bubbleView.parent != null) {
             windowManager.removeView(bubbleView)
         }
-        if (::menuView.isInitialized && menuView.parent != null) {
+        if (menuView != null && menuView?.parent != null) {
             windowManager.removeView(menuView)
+            menuView = null
         }
     }
 }
