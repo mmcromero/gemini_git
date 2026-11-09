@@ -31,10 +31,19 @@ jobs:
         echo "sdk.dir=$ANDROID_HOME" > local.properties
         yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
+    - name: Generate Custom Keystore
+      run: |
+        keytool -genkey -v -keystore release.keystore -alias releaseKey -keyalg RSA -keysize 2048 -validity 10000 -storepass releasePass -keypass releasePass -dname "CN=PromptFlutuante, OU=Dev, O=UmDoisLab, L=SP, C=BR"
+
     - name: Build Release APK
       id: gradle_build
       continue-on-error: true
       run: gradle assembleRelease --stacktrace
+
+    - name: Sign Release APK
+      if: steps.gradle_build.outcome == 'success'
+      run: |
+        $ANDROID_HOME/build-tools/34.0.0/apksigner sign --ks release.keystore --ks-pass pass:releasePass --key-pass pass:releasePass app/build/outputs/apk/release/app-release.apk
 
     - name: Analyze Error with Gemini API (if build fails)
       if: steps.gradle_build.outcome == 'failure'
@@ -58,5 +67,5 @@ jobs:
       if: steps.gradle_build.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
-        name: app-release.apk
+        name: app-release-signed.apk
         path: app/build/outputs/apk/release/app-release.apk
