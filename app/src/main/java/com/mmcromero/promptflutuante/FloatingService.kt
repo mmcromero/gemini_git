@@ -188,16 +188,6 @@ class FloatingService : Service() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
-        val btnTurnOff = Button(themedContext).apply {
-            text = "Desativar"
-            textSize = 11f
-            setTextColor(Color.parseColor("#FF5252"))
-            background = null
-            setOnClickListener {
-                stopSelf()
-            }
-        }
-
         val closeBtn = Button(themedContext).apply {
             text = "✕"
             setTextColor(Color.GRAY)
@@ -207,15 +197,17 @@ class FloatingService : Service() {
         }
 
         header.addView(title)
-        header.addView(btnTurnOff)
         header.addView(closeBtn)
         mainLayout.addView(header)
 
         val scrollView = ScrollView(themedContext).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                550
-            )
+                0,
+                1f
+            ).apply {
+                setMargins(0, 10, 0, 10)
+            }
         }
 
         val listContainer = LinearLayout(themedContext).apply {
@@ -277,6 +269,28 @@ class FloatingService : Service() {
 
         scrollView.addView(listContainer)
         mainLayout.addView(scrollView)
+
+        val btnTurnOff = Button(themedContext).apply {
+            text = "DESATIVAR APP"
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 14f
+                setColor(Color.parseColor("#FF3333"))
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 20, 0, 0)
+            }
+            setOnClickListener {
+                stopSelf()
+            }
+        }
+        mainLayout.addView(btnTurnOff)
+
         return mainLayout
     }
 
@@ -285,7 +299,7 @@ class FloatingService : Service() {
             menuView = buildMenuView()
             bubbleView.alpha = 1.0f
 
-            val menuWidth = (screenWidth * 0.85).toInt().coerceAtMost(720)
+            val menuWidth = (screenWidth * 0.82).toInt().coerceAtMost(700)
             
             menuParams = WindowManager.LayoutParams(
                 menuWidth, WindowManager.LayoutParams.WRAP_CONTENT,
@@ -293,7 +307,20 @@ class FloatingService : Service() {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT
             ).apply {
-                gravity = Gravity.CENTER
+                gravity = Gravity.TOP or Gravity.START
+                alpha = 0.80f  // Adiciona a transparência de 80% pedida
+                
+                // Calcula a posição do menu baseado em onde a bolinha está na tela
+                val bubbleCenterY = bubbleParams.y + (bubbleView.height / 2)
+                
+                // Exibe o menu sempre alinhado debaixo ou ao lado da bolinha respeitando limites
+                x = if (bubbleParams.x < screenWidth / 2) {
+                    bubbleParams.x + 140 // Abre para a direita se a bolinha estiver na esquerda
+                } else {
+                    bubbleParams.x - menuWidth - 20 // Abre para a esquerda se a bolinha estiver na direita
+                }.coerceIn(10, screenWidth - menuWidth - 10)
+                
+                y = (bubbleCenterY - 120).coerceIn(40, screenHeight - 850)
             }
 
             windowManager.addView(menuView, menuParams)
