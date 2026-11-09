@@ -1,9 +1,12 @@
 package com.mmcromero.promptflutuante
 
+import android.app.AppOpsManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Process
 import android.provider.Settings
 import android.widget.Button
 import android.widget.LinearLayout
@@ -24,7 +27,7 @@ class MainActivity : AppCompatActivity() {
             text = "1. Ativar Serviço Flutuante"
             setOnClickListener {
                 FloatingService.isMasterEnabled = true
-                checkOverlayPermissionAndStart()
+                checkPermissionsAndStart()
             }
         }
 
@@ -38,31 +41,43 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val btnAccessibility = Button(this).apply {
-            text = "3. Ativar Detecção de Apps (Acessibilidade)"
+        val btnUsagePermission = Button(this).apply {
+            text = "3. Permitir Detecção de Apps (Acesso ao Uso)"
             setOnClickListener {
-                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                startActivity(intent)
-                Toast.makeText(context, "Ative 'Prompt Flutuante' na lista de Acessibilidade", Toast.LENGTH_LONG).show()
+                startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                Toast.makeText(context, "Ative o 'Prompt Flutuante' na lista", Toast.LENGTH_LONG).show()
             }
         }
 
         layout.addView(btnStart)
         layout.addView(btnStop)
-        layout.addView(btnAccessibility)
+        layout.addView(btnUsagePermission)
         setContentView(layout)
     }
 
-    private fun checkOverlayPermissionAndStart() {
+    private fun checkPermissionsAndStart() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             val intent = Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:$packageName")
             )
             startActivityForResult(intent, 1234)
+        } else if (!hasUsageStatsPermission()) {
+            Toast.makeText(this, "Por favor, ative a permissão de Acesso ao Uso", Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
         } else {
             startFloatingService()
         }
+    }
+
+    private fun hasUsageStatsPermission(): Boolean {
+        val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+        val mode = appOps.checkOpNoThrow(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            Process.myUid(),
+            packageName
+        )
+        return mode == AppOpsManager.MODE_ALLOWED
     }
 
     private fun startFloatingService() {
@@ -74,11 +89,7 @@ class MainActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 1234) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)) {
-                startFloatingService()
-            } else {
-                Toast.makeText(this, "Permissão negada para sobrepor apps", Toast.LENGTH_SHORT).show()
-            }
+            checkPermissionsAndStart()
         }
     }
 }
