@@ -1,11 +1,6 @@
 package com.mmcromero.promptflutuante
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.Service
-import android.app.usage.UsageEvents
-import android.app.usage.UsageStatsManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -15,25 +10,17 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
+import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.*
 import androidx.appcompat.widget.SwitchCompat
-import androidx.core.app.NotificationCompat
 import kotlin.math.abs
 
 class FloatingService : Service() {
-
-    companion object {
-        var isMasterEnabled = true
-        private const val CHANNEL_ID = "PromptFlutuanteChannel"
-        private const val NOTIFICATION_ID = 1001
-    }
 
     private lateinit var windowManager: WindowManager
     private lateinit var bubbleView: View
@@ -41,27 +28,7 @@ class FloatingService : Service() {
     private lateinit var bubbleParams: WindowManager.LayoutParams
     private lateinit var menuParams: WindowManager.LayoutParams
 
-    private var currentForegroundPackage: String = ""
-
-    private val handler = Handler(Looper.getMainLooper())
-    private val checkAppRunnable = object : Runnable {
-        override fun run() {
-            checkForegroundApp()
-            handler.postDelayed(this, 800)
-        }
-    }
-
-    private val aiAppPackages = setOf(
-        "com.openai.chatgpt",
-        "com.google.android.apps.bard",
-        "com.google.android.googlequicksearchbox",
-        "com.google.android.apps.search",
-        "com.anthropic.claude.chat",
-        "com.anthropic.claude",
-        "com.anthropic.claudebot",
-        "com.perplexity.perplexity",
-        "com.microsoft.copilot"
-    )
+    private var screenWidth: Int = 0
 
     private val generalRules = "Regras Gerais Permanentes: Mantenha as respostas em português, objetivas e estruturadas."
 
@@ -101,63 +68,13 @@ class FloatingService : Service() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
-        startForegroundServiceNotification()
+        val displayMetrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        windowManager.defaultDisplay.getMetrics(displayMetrics)
+        screenWidth = displayMetrics.widthPixels
+
         setupBubbleView()
         setupMenuView()
-
-        handler.post(checkAppRunnable)
-    }
-
-    private fun startForegroundServiceNotification() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Serviço Prompt Flutuante",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(channel)
-        }
-
-        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Prompt Flutuante")
-            .setContentText("Monitorando aplicativos de IA em segundo plano")
-            .setSmallIcon(android.R.drawable.btn_star)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-
-        startForeground(NOTIFICATION_ID, notification)
-    }
-
-    private fun checkForegroundApp() {
-        if (!isMasterEnabled) {
-            if (::bubbleView.isInitialized) bubbleView.visibility = View.GONE
-            if (::menuView.isInitialized && menuView.parent != null) windowManager.removeView(menuView)
-            return
-        }
-
-        val detectedPackage = getForegroundPackage()
-        if (aiAppPackages.contains(detectedPackage)) {
-            if (::bubbleView.isInitialized) bubbleView.visibility = View.VISIBLE
-        } else {
-            if (::bubbleView.isInitialized) bubbleView.visibility = View.GONE
-            if (::menuView.isInitialized && menuView.parent != null) windowManager.removeView(menuView)
-        }
-    }
-
-    private fun getForegroundPackage(): String {
-        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        val time = System.currentTimeMillis()
-        val events = usm.queryEvents(time - 1000 * 10, time)
-        val event = UsageEvents.Event()
-
-        while (events.hasNextEvent()) {
-            events.getNextEvent(event)
-            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
-                currentForegroundPackage = event.packageName
-            }
-        }
-        return currentForegroundPackage
     }
 
     private fun getOverlayType(): Int {
@@ -178,17 +95,18 @@ class FloatingService : Service() {
                 shape = GradientDrawable.OVAL
                 setColor(Color.parseColor("#6200EE"))
             }
+            alpha = 0.45f
         }
 
         bubbleParams = WindowManager.LayoutParams(
-            140, 140,
+            130, 130,
             getOverlayType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 100
-            y = 300
+            x = screenWidth - 140
+            y = 400
         }
 
         button.setOnTouchListener(object : View.OnTouchListener {
@@ -200,6 +118,7 @@ class FloatingService : Service() {
             override fun onTouch(v: View, event: MotionEvent): Boolean {
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
+                        button.alpha = 1.0f
                         initialX = bubbleParams.x
                         initialY = bubbleParams.y
                         initialTouchX = event.rawX
@@ -215,8 +134,20 @@ class FloatingService : Service() {
                     MotionEvent.ACTION_UP -> {
                         val diffX = abs(event.rawX - initialTouchX)
                         val diffY = abs(event.rawY - initialTouchY)
+
                         if (diffX < 10 && diffY < 10) {
                             toggleMenuVisibility()
+                        } else {
+                            if (bubbleParams.x < screenWidth / 2) {
+                                bubbleParams.x = 10
+                            } else {
+                                bubbleParams.x = screenWidth - 140
+                            }
+                            windowManager.updateViewLayout(bubbleView, bubbleParams)
+                        }
+
+                        if (menuView.parent == null) {
+                            button.alpha = 0.45f
                         }
                         return true
                     }
@@ -226,7 +157,6 @@ class FloatingService : Service() {
         })
 
         bubbleView = button
-        bubbleView.visibility = View.GONE
         windowManager.addView(bubbleView, bubbleParams)
     }
 
@@ -254,6 +184,16 @@ class FloatingService : Service() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
+        val btnTurnOff = Button(this).apply {
+            text = "Desativar App"
+            textSize = 11f
+            setTextColor(Color.parseColor("#FF5252"))
+            background = null
+            setOnClickListener {
+                stopSelf()
+            }
+        }
+
         val closeBtn = Button(this).apply {
             text = "✕"
             setTextColor(Color.GRAY)
@@ -263,6 +203,7 @@ class FloatingService : Service() {
         }
 
         header.addView(title)
+        header.addView(btnTurnOff)
         header.addView(closeBtn)
         mainLayout.addView(header)
 
@@ -350,11 +291,13 @@ class FloatingService : Service() {
     private fun toggleMenuVisibility() {
         if (menuView.parent == null) {
             setupMenuView()
-            menuParams.x = bubbleParams.x
-            menuParams.y = bubbleParams.y + 150
+            bubbleView.alpha = 1.0f
+            menuParams.x = if (bubbleParams.x > screenWidth / 2) bubbleParams.x - 550 else bubbleParams.x + 50
+            menuParams.y = bubbleParams.y + 100
             windowManager.addView(menuView, menuParams)
         } else {
             windowManager.removeView(menuView)
+            bubbleView.alpha = 0.45f
         }
     }
 
@@ -367,7 +310,6 @@ class FloatingService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        handler.removeCallbacks(checkAppRunnable)
         if (::bubbleView.isInitialized && bubbleView.parent != null) {
             windowManager.removeView(bubbleView)
         }
