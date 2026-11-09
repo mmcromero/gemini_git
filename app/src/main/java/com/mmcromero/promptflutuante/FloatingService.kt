@@ -1,6 +1,8 @@
 package com.mmcromero.promptflutuante
 
 import android.app.Service
+import android.app.usage.UsageStats
+import android.app.usage.UsageStatsManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -10,13 +12,16 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.*
 import androidx.appcompat.widget.SwitchCompat
+import java.util.TreeMap
 import kotlin.math.abs
 
 class FloatingService : Service() {
@@ -30,6 +35,22 @@ class FloatingService : Service() {
     private lateinit var menuView: View
     private lateinit var bubbleParams: WindowManager.LayoutParams
     private lateinit var menuParams: WindowManager.LayoutParams
+
+    private val handler = Handler(Looper.getMainLooper())
+    private val checkAppRunnable = object : Runnable {
+        override fun run() {
+            checkForegroundApp()
+            handler.postDelayed(this, 1000)
+        }
+    }
+
+    private val aiAppPackages = setOf(
+        "com.openai.chatgpt",
+        "com.google.android.apps.bard",
+        "com.anthropic.claude.chat",
+        "com.perplexity.perplexity",
+        "com.microsoft.copilot"
+    )
 
     private val generalRules = "Regras Gerais Permanentes: Mantenha as respostas em português, objetivas e estruturadas."
 
@@ -71,29 +92,40 @@ class FloatingService : Service() {
 
         setupBubbleView()
         setupMenuView()
+
+        handler.post(checkAppRunnable)
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    private fun checkForegroundApp() {
         if (!isMasterEnabled) {
             if (::bubbleView.isInitialized) bubbleView.visibility = View.GONE
-            if (::menuView.isInitialized && menuView.parent != null) {
-                windowManager.removeView(menuView)
-            }
-            return START_NOT_STICKY
+            if (::menuView.isInitialized && menuView.parent != null) windowManager.removeView(menuView)
+            return
         }
 
-        when (intent?.action) {
-            "SHOW_BUBBLE" -> {
-                if (::bubbleView.isInitialized) bubbleView.visibility = View.VISIBLE
+        val currentPackage = getForegroundPackage()
+        if (aiAppPackages.contains(currentPackage)) {
+            if (::bubbleView.isInitialized) bubbleView.visibility = View.VISIBLE
+        } else {
+            if (::bubbleView.isInitialized) bubbleView.visibility = View.GONE
+            if (::menuView.isInitialized && menuView.parent != null) windowManager.removeView(menuView)
+        }
+    }
+
+    private fun getForegroundPackage(): String {
+        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val time = System.currentTimeMillis()
+        val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, time - 1000 * 10, time)
+        if (!stats.isNullOrEmpty()) {
+            val mySortedMap = TreeMap<Long, UsageStats>()
+            for (usageStats in stats) {
+                mySortedMap[usageStats.lastTimeUsed] = usageStats
             }
-            "HIDE_BUBBLE" -> {
-                if (::bubbleView.isInitialized) bubbleView.visibility = View.GONE
-                if (::menuView.isInitialized && menuView.parent != null) {
-                    windowManager.removeView(menuView)
-                }
+            if (!mySortedMap.isEmpty()) {
+                return mySortedMap.get(mySortedMap.lastKey())?.packageName ?: ""
             }
         }
-        return START_STICKY
+        return ""
     }
 
     private fun getOverlayType(): Int {
@@ -162,6 +194,7 @@ class FloatingService : Service() {
         })
 
         bubbleView = button
+        bubbleView.visibility = View.GONE
         windowManager.addView(bubbleView, bubbleParams)
     }
 
@@ -302,6 +335,7 @@ class FloatingService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        handler.removeCallbacks(checkAppRunnable)
         if (::bubbleView.isInitialized && bubbleView.parent != null) {
             windowManager.removeView(bubbleView)
         }
