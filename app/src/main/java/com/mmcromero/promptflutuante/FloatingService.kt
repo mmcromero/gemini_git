@@ -1,7 +1,7 @@
 package com.mmcromero.promptflutuante
 
 import android.app.Service
-import android.app.usage.UsageStats
+import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -21,7 +21,6 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.*
 import androidx.appcompat.widget.SwitchCompat
-import java.util.TreeMap
 import kotlin.math.abs
 
 class FloatingService : Service() {
@@ -40,13 +39,14 @@ class FloatingService : Service() {
     private val checkAppRunnable = object : Runnable {
         override fun run() {
             checkForegroundApp()
-            handler.postDelayed(this, 1000)
+            handler.postDelayed(this, 800)
         }
     }
 
     private val aiAppPackages = setOf(
         "com.openai.chatgpt",
         "com.google.android.apps.bard",
+        "com.google.android.googlequicksearchbox",
         "com.anthropic.claude.chat",
         "com.perplexity.perplexity",
         "com.microsoft.copilot"
@@ -115,17 +115,17 @@ class FloatingService : Service() {
     private fun getForegroundPackage(): String {
         val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val time = System.currentTimeMillis()
-        val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, time - 1000 * 10, time)
-        if (!stats.isNullOrEmpty()) {
-            val mySortedMap = TreeMap<Long, UsageStats>()
-            for (usageStats in stats) {
-                mySortedMap[usageStats.lastTimeUsed] = usageStats
-            }
-            if (!mySortedMap.isEmpty()) {
-                return mySortedMap.get(mySortedMap.lastKey())?.packageName ?: ""
+        val events = usm.queryEvents(time - 1000 * 5, time)
+        val event = UsageEvents.Event()
+        var lastForegroundApp = ""
+
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED || event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                lastForegroundApp = event.packageName
             }
         }
-        return ""
+        return lastForegroundApp
     }
 
     private fun getOverlayType(): Int {
