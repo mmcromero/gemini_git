@@ -26,15 +26,23 @@ jobs:
       with:
         gradle-version: '8.5'
 
+    - name: Configure Android SDK Location
+      run: |
+        echo "sdk.dir=/usr/local/lib/android/sdk" > local.properties
+
     - name: Build Debug APK
       id: gradle_build
       continue-on-error: true
       run: gradle assembleDebug --stacktrace
+      env:
+        ANDROID_HOME: /usr/local/lib/android/sdk
+        ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     - name: Analyze Error with Gemini API (if build fails)
       if: steps.gradle_build.outcome == 'failure'
       env:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        ANDROID_HOME: /usr/local/lib/android/sdk
       run: |
         echo "O build falhou. Enviando erro para o Gemini..."
         ERROR_LOG=$(gradle assembleDebug --stacktrace 2>&1 | tail -n 100 || echo "Erro durante a compilação do Gradle.")
