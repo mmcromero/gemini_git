@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
@@ -15,9 +16,14 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.*
+import androidx.appcompat.widget.SwitchCompat
 import kotlin.math.abs
 
 class FloatingService : Service() {
+
+    companion object {
+        var isMasterEnabled = true
+    }
 
     private lateinit var windowManager: WindowManager
     private lateinit var bubbleView: View
@@ -25,10 +31,8 @@ class FloatingService : Service() {
     private lateinit var bubbleParams: WindowManager.LayoutParams
     private lateinit var menuParams: WindowManager.LayoutParams
 
-    // Regra Geral Universal (Prompt Mestre)
     private val generalRules = "Regras Gerais Permanentes: Mantenha as respostas em português, objetivas e estruturadas."
 
-    // Estrutura de dados dos prompts (todos iniciam desativados)
     data class PromptItem(
         val title: String,
         val onPrompt: String,
@@ -62,6 +66,29 @@ class FloatingService : Service() {
 
         setupBubbleView()
         setupMenuView()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!isMasterEnabled) {
+            if (::bubbleView.isInitialized) bubbleView.visibility = View.GONE
+            if (::menuView.isInitialized && menuView.parent != null) {
+                windowManager.removeView(menuView)
+            }
+            return START_NOT_STICKY
+        }
+
+        when (intent?.action) {
+            "SHOW_BUBBLE" -> {
+                if (::bubbleView.isInitialized) bubbleView.visibility = View.VISIBLE
+            }
+            "HIDE_BUBBLE" -> {
+                if (::bubbleView.isInitialized) bubbleView.visibility = View.GONE
+                if (::menuView.isInitialized && menuView.parent != null) {
+                    windowManager.removeView(menuView)
+                }
+            }
+        }
+        return START_STICKY
     }
 
     private fun getOverlayType(): Int {
@@ -180,6 +207,15 @@ class FloatingService : Service() {
             orientation = LinearLayout.VERTICAL
         }
 
+        val thumbColors = ColorStateList(
+            arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+            intArrayOf(Color.parseColor("#00E676"), Color.parseColor("#B0BEC5"))
+        )
+        val trackColors = ColorStateList(
+            arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+            intArrayOf(Color.parseColor("#1B5E20"), Color.parseColor("#455A64"))
+        )
+
         promptList.forEach { prompt ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -194,8 +230,10 @@ class FloatingService : Service() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
 
-            val switchBtn = Switch(this).apply {
+            val switchBtn = SwitchCompat(this).apply {
                 isChecked = prompt.isEnabled
+                thumbTintList = thumbColors
+                trackTintList = trackColors
                 setOnClickListener {
                     val newState = isChecked
                     prompt.isEnabled = newState
