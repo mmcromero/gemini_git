@@ -1,10 +1,12 @@
 package com.mmcromero.promptflutuante
 
+import android.app.AlertDialog
 import android.app.Service
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -19,6 +21,8 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.*
 import androidx.appcompat.widget.SwitchCompat
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.math.abs
 
 class FloatingService : Service() {
@@ -31,44 +35,26 @@ class FloatingService : Service() {
 
     private var screenWidth: Int = 0
     private var screenHeight: Int = 0
+    private lateinit var prefs: SharedPreferences
 
     private val generalRules = "Regras Gerais Permanentes: Mantenha as respostas em português, objetivas e estruturadas."
 
     data class PromptItem(
-        val title: String,
-        val onPrompt: String,
-        val offPrompt: String,
+        val id: String,
+        var title: String,
+        var onPrompt: String,
+        var offPrompt: String,
         var isEnabled: Boolean = false
     )
 
-    private val promptList = mutableListOf(
-        PromptItem(
-            title = "Pair Programming",
-            onPrompt = "SOBREPOR TUDO - Modo Pair Programming ATIVADO: Atue como meu copiloto e arquiteto de software. Diante de qualquer ideia, recurso ou problema, execute 100% da geração de código e solução técnica até o seu limite como IA, orientando-me com passos diretos apenas naquilo que exigir ação manual minha. Forneça instruções ultra precisas, links diretos em blocos de texto limpo individuais por URL, âncoras exatas de código para substituição e priorize facilidade de cópia e execução.",
-            offPrompt = "CANCELAR Modo Pair Programming: Encerre o modo estrito de pair programming e retorne ao comportamento padrão."
-        ),
-        PromptItem(
-            title = "Modo Celular",
-            onPrompt = "SOBREPOR TUDO - Modo Celular ATIVADO: Responda de forma extremamente curta, usando tópicos rápidos e frases diretas.",
-            offPrompt = "CANCELAR Modo Celular: Encerre o modo de respostas curtas e retorne ao comportamento padrão."
-        ),
-        PromptItem(
-            title = "Análise de Código",
-            onPrompt = "SOBREPOR TUDO - Modo Code Review ATIVADO: Foque exclusivamente na identificação de bugs, performance e boas práticas do código a seguir.",
-            offPrompt = "CANCELAR Modo Code Review: Desative a análise estrita de código e volte ao tom de conversa normal."
-        ),
-        PromptItem(
-            title = "Revisar Texto",
-            onPrompt = "SOBREPOR TUDO - Modo Revisor ATIVADO: Reescreva o texto a seguir corrigindo gramática e pontuação, mantendo o tom natural.",
-            offPrompt = "CANCELAR Modo Revisor: Encerre a revisão de texto e retorne ao comportamento padrão."
-        )
-    )
+    private val promptList = mutableListOf<PromptItem>()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        prefs = getSharedPreferences("PromptsFlutuantesPrefs", Context.MODE_PRIVATE)
 
         val displayMetrics = DisplayMetrics()
         @Suppress("DEPRECATION")
@@ -76,7 +62,80 @@ class FloatingService : Service() {
         screenWidth = displayMetrics.widthPixels
         screenHeight = displayMetrics.heightPixels
 
+        loadPrompts()
         setupBubbleView()
+    }
+
+    private fun loadPrompts() {
+        promptList.clear()
+        val jsonString = prefs.getString("prompts_json", null)
+        if (jsonString.isNullOrEmpty()) {
+            promptList.add(
+                PromptItem(
+                    id = "1",
+                    title = "Pair Programming",
+                    onPrompt = "SOBREPOR TUDO - Modo Pair Programming ATIVADO: Atue como meu copiloto e arquiteto de software. Diante de qualquer ideia, recurso ou problema, execute 100% da geração de código e solução técnica até o seu limite como IA, orientando-me com passos diretos apenas naquilo que exigir ação manual minha. Forneça instruções ultra precisas, links diretos em blocos de texto limpo individuais por URL, âncoras exatas de código para substituição e priorize facilidade de cópia e execução.",
+                    offPrompt = "CANCELAR Modo Pair Programming: Encerre o modo estrito de pair programming e retorne ao comportamento padrão."
+                )
+            )
+            promptList.add(
+                PromptItem(
+                    id = "2",
+                    title = "Modo Celular",
+                    onPrompt = "SOBREPOR TUDO - Modo Celular ATIVADO: Responda de forma extremamente curta, usando tópicos rápidos e frases diretas.",
+                    offPrompt = "CANCELAR Modo Celular: Encerre o modo de respostas curtas e retorne ao comportamento padrão."
+                )
+            )
+            promptList.add(
+                PromptItem(
+                    id = "3",
+                    title = "Análise de Código",
+                    onPrompt = "SOBREPOR TUDO - Modo Code Review ATIVADO: Foque exclusivamente na identificação de bugs, performance e boas práticas do código a seguir.",
+                    offPrompt = "CANCELAR Modo Code Review: Desative a análise estrita de código e volte ao tom de conversa normal."
+                )
+            )
+            promptList.add(
+                PromptItem(
+                    id = "4",
+                    title = "Revisar Texto",
+                    onPrompt = "SOBREPOR TUDO - Modo Revisor ATIVADO: Reescreva o texto a seguir corrigindo gramática e pontuação, mantendo o tom natural.",
+                    offPrompt = "CANCELAR Modo Revisor: Encerre a revisão de texto e retorne ao comportamento padrão."
+                )
+            )
+            savePrompts()
+        } else {
+            try {
+                val array = JSONArray(jsonString)
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    promptList.add(
+                        PromptItem(
+                            id = obj.getString("id"),
+                            title = obj.getString("title"),
+                            onPrompt = obj.getString("onPrompt"),
+                            offPrompt = obj.getString("offPrompt"),
+                            isEnabled = false
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun savePrompts() {
+        val array = JSONArray()
+        promptList.forEach { item ->
+            val obj = JSONObject().apply {
+                put("id", item.id)
+                put("title", item.title)
+                put("onPrompt", item.onPrompt)
+                put("offPrompt", item.offPrompt)
+            }
+            array.put(obj)
+        }
+        prefs.edit().putString("prompts_json", array.toString()).apply()
     }
 
     private fun getOverlayType(): Int {
@@ -131,6 +190,11 @@ class FloatingService : Service() {
                         bubbleParams.x = initialX + (event.rawX - initialTouchX).toInt()
                         bubbleParams.y = initialY + (event.rawY - initialTouchY).toInt()
                         windowManager.updateViewLayout(bubbleView, bubbleParams)
+
+                        // Sincroniza a posição da janela se estiver aberta
+                        if (menuView != null && menuView?.parent != null) {
+                            updateMenuPosition()
+                        }
                         return true
                     }
                     MotionEvent.ACTION_UP -> {
@@ -146,6 +210,9 @@ class FloatingService : Service() {
                                 bubbleParams.x = screenWidth - 140
                             }
                             windowManager.updateViewLayout(bubbleView, bubbleParams)
+                            if (menuView != null && menuView?.parent != null) {
+                                updateMenuPosition()
+                            }
                         }
 
                         if (menuView == null || menuView?.parent == null) {
@@ -162,12 +229,26 @@ class FloatingService : Service() {
         windowManager.addView(bubbleView, bubbleParams)
     }
 
+    private fun updateMenuPosition() {
+        val menuWidth = (screenWidth * 0.85).toInt().coerceAtMost(720)
+        menuParams.x = if (bubbleParams.x < screenWidth / 2) {
+            bubbleParams.x
+        } else {
+            bubbleParams.x + 130 - menuWidth
+        }.coerceIn(10, screenWidth - menuWidth - 10)
+
+        menuParams.y = (bubbleParams.y + 140).coerceIn(40, screenHeight - 850)
+        if (menuView != null && menuView?.parent != null) {
+            windowManager.updateViewLayout(menuView, menuParams)
+        }
+    }
+
     private fun buildMenuView(): View {
         val themedContext = ContextThemeWrapper(this, androidx.appcompat.R.style.Theme_AppCompat_Light_NoActionBar)
         
         val mainLayout = LinearLayout(themedContext).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(35, 35, 35, 35)
+            setPadding(30, 30, 30, 30)
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = 24f
@@ -188,16 +269,16 @@ class FloatingService : Service() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
-        val closeBtn = Button(themedContext).apply {
-            text = "✕"
-            setTextColor(Color.GRAY)
-            textSize = 14f
+        val addBtn = Button(themedContext).apply {
+            text = "＋"
+            setTextColor(Color.parseColor("#00E676"))
+            textSize = 20f
             background = null
-            setOnClickListener { toggleMenuVisibility() }
+            setOnClickListener { showAddEditDialog(null) }
         }
 
         header.addView(title)
-        header.addView(closeBtn)
+        header.addView(addBtn)
         mainLayout.addView(header)
 
         val scrollView = ScrollView(themedContext).apply {
@@ -227,7 +308,7 @@ class FloatingService : Service() {
             val row = LinearLayout(themedContext).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, 16, 0, 16)
+                setPadding(0, 12, 0, 12)
             }
 
             val promptTitle = TextView(themedContext).apply {
@@ -235,6 +316,15 @@ class FloatingService : Service() {
                 setTextColor(Color.WHITE)
                 textSize = 14f
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                setOnClickListener { showAddEditDialog(prompt) }
+            }
+
+            val deleteBtn = Button(themedContext).apply {
+                text = "🗑"
+                textSize = 12f
+                setTextColor(Color.parseColor("#FF5252"))
+                background = null
+                setOnClickListener { confirmDeletePrompt(prompt) }
             }
 
             val switchBtn = SwitchCompat(themedContext).apply {
@@ -263,6 +353,7 @@ class FloatingService : Service() {
             }
 
             row.addView(promptTitle)
+            row.addView(deleteBtn)
             row.addView(switchBtn)
             listContainer.addView(row)
         }
@@ -283,7 +374,7 @@ class FloatingService : Service() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(0, 20, 0, 0)
+                setMargins(0, 15, 0, 0)
             }
             setOnClickListener {
                 stopSelf()
@@ -294,12 +385,107 @@ class FloatingService : Service() {
         return mainLayout
     }
 
+    private fun showAddEditDialog(prompt: PromptItem?) {
+        val themedContext = ContextThemeWrapper(this, androidx.appcompat.R.style.Theme_AppCompat_Light_Dialog)
+        val layout = LinearLayout(themedContext).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 20, 40, 20)
+        }
+
+        val editTitle = EditText(themedContext).apply {
+            hint = "Título do Prompt"
+            setText(prompt?.title ?: "")
+        }
+
+        val editOn = EditText(themedContext).apply {
+            hint = "Prompt de Ativação (ON)"
+            setText(prompt?.onPrompt ?: "")
+        }
+
+        val editOff = EditText(themedContext).apply {
+            hint = "Prompt de Desativação (OFF)"
+            setText(prompt?.offPrompt ?: "")
+        }
+
+        layout.addView(editTitle)
+        layout.addView(editOn)
+        layout.addView(editOff)
+
+        val dialogBuilder = AlertDialog.Builder(themedContext)
+            .setTitle(if (prompt == null) "Novo Prompt" else "Editar Prompt")
+            .setView(layout)
+            .setPositiveButton("Salvar") { _, _ ->
+                val newTitle = editTitle.text.toString()
+                val newOn = editOn.text.toString()
+                val newOff = editOff.text.toString()
+
+                if (newTitle.isNotEmpty()) {
+                    if (prompt == null) {
+                        promptList.add(
+                            PromptItem(
+                                id = System.currentTimeMillis().toString(),
+                                title = newTitle,
+                                onPrompt = newOn,
+                                offPrompt = newOff
+                            )
+                        )
+                    } else {
+                        prompt.title = newTitle
+                        prompt.onPrompt = newOn
+                        prompt.offPrompt = newOff
+                    }
+                    savePrompts()
+                    if (menuView != null && menuView?.parent != null) {
+                        windowManager.removeView(menuView)
+                        menuView = buildMenuView()
+                        windowManager.addView(menuView, menuParams)
+                    }
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+
+        val dialog = dialogBuilder.create()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        } else {
+            @Suppress("DEPRECATION")
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_PHONE)
+        }
+        dialog.show()
+    }
+
+    private fun confirmDeletePrompt(prompt: PromptItem) {
+        val themedContext = ContextThemeWrapper(this, androidx.appcompat.R.style.Theme_AppCompat_Light_Dialog)
+        val dialog = AlertDialog.Builder(themedContext)
+            .setTitle("Excluir Prompt")
+            .setMessage("Tem certeza que deseja excluir '${prompt.title}'?")
+            .setPositiveButton("Excluir") { _, _ ->
+                promptList.remove(prompt)
+                savePrompts()
+                if (menuView != null && menuView?.parent != null) {
+                    windowManager.removeView(menuView)
+                    menuView = buildMenuView()
+                    windowManager.addView(menuView, menuParams)
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+            .create()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        } else {
+            @Suppress("DEPRECATION")
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_PHONE)
+        }
+        dialog.show()
+    }
+
     private fun toggleMenuVisibility() {
         if (menuView == null || menuView?.parent == null) {
             menuView = buildMenuView()
             bubbleView.alpha = 1.0f
 
-            val menuWidth = (screenWidth * 0.82).toInt().coerceAtMost(700)
+            val menuWidth = (screenWidth * 0.85).toInt().coerceAtMost(720)
             
             menuParams = WindowManager.LayoutParams(
                 menuWidth, WindowManager.LayoutParams.WRAP_CONTENT,
@@ -308,21 +494,10 @@ class FloatingService : Service() {
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
-                alpha = 0.80f  // Adiciona a transparência de 80% pedida
-                
-                // Calcula a posição do menu baseado em onde a bolinha está na tela
-                val bubbleCenterY = bubbleParams.y + (bubbleView.height / 2)
-                
-                // Exibe o menu sempre alinhado debaixo ou ao lado da bolinha respeitando limites
-                x = if (bubbleParams.x < screenWidth / 2) {
-                    bubbleParams.x + 140 // Abre para a direita se a bolinha estiver na esquerda
-                } else {
-                    bubbleParams.x - menuWidth - 20 // Abre para a esquerda se a bolinha estiver na direita
-                }.coerceIn(10, screenWidth - menuWidth - 10)
-                
-                y = (bubbleCenterY - 120).coerceIn(40, screenHeight - 850)
+                alpha = 0.80f
             }
 
+            updateMenuPosition()
             windowManager.addView(menuView, menuParams)
         } else {
             windowManager.removeView(menuView)
